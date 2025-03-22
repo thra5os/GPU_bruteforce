@@ -8,6 +8,16 @@ import math
 import time
 
 
+# générer et afficher la clé
+"""
+key = RSA.generate(1024)
+private_key = key.export_key()
+public_key = key.publickey().export_key()
+
+print("priv key = ", private_key)
+print("pub key = ", public_key)
+"""
+
 def generate_rsa_key(p,q):
     
     n = p*q
@@ -71,12 +81,22 @@ def factorize_n_gpu(n):
     
     return factors
 
+def find_d(e, p, q):
+    phi_n = (p-1)*(q-1)
+    d = pow(e, -1, int(phi_n))
+    return d
 
 public_key, private_key = generate_rsa_key(49993 ,49999)
 print("Clé publique (n,e):", public_key)
 print("Clé privée (n,d):", private_key)
-p = factorize_n_gpu(2499600007)
-print(p)
+factors = factorize_n_gpu(2499600007)
+print(factors)
+e = public_key[1]
+p = factors[0][0]
+q = factors[0][1]
+print(e,p,q)
+d_gpu = find_d(e,p,q)
+print("Résultat du bruteforce GPU : d = ",d_gpu)
 d = bruteforce_cpu(public_key)
-print("résultat bruteforce cpu = ",d)
+print("résultat bruteforce = ",d)
 
