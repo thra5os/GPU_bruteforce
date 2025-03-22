@@ -7,16 +7,7 @@ import gmpy2
 import math
 import time
 
-
-# générer et afficher la clé
-"""
-key = RSA.generate(1024)
-private_key = key.export_key()
-public_key = key.publickey().export_key()
-
-print("priv key = ", private_key)
-print("pub key = ", public_key)
-"""
+# générer un clé RSA de petite taille
 
 def generate_rsa_key(p,q):
     
@@ -31,7 +22,7 @@ def generate_rsa_key(p,q):
     
     return (n, e), (n, d)
 
-
+# cassage de la clé en utilisant le CPU, pour comparer les temps d'exécution
 
 def bruteforce_cpu(pub_key):
     n,e = pub_key
