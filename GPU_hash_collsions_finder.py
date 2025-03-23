@@ -9,11 +9,19 @@ def find_collisions_gpu(data, hashes, size, collision, col_index):
 
     if idx < size:
         # Simple fonction de hash pour le POC
+        """
         hash_val = 0
         for i in range(len(data[idx])):
             hash_val = (hash_val * 31 + data[idx][i]) & 0xFFFFFFFF
         hashes[idx] = hash_val
+        """
+        # Hash DJB2 pour moi de collisions, en 64 bitd
+        hash_val = 6190
+        for i in range(len(data[idx])):
+            hash_val = ((hash_val << 5) + hash_val) + data[idx][i]
+        hashes[idx] = hash_val & 0xFFFFFFFFFFFFFFFF  
 
+        
         # Check les hash précédant pour vérifier les collsisions
         for j in range(idx):
             if hashes[idx] == hashes[j]:
