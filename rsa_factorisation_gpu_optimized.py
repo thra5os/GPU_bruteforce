@@ -81,28 +81,27 @@ def factoriser_bignum_gpu(n_bignum):
     d_facteurs.copy_to_host(facteurs)
     return facteurs
 
-##########################
-# MAIN avec Speedup calculé
-##########################
 if __name__ == "__main__":
     print("=== Génération des clés RSA BIGNUM ===")
     debut = time.perf_counter()
     p, q, n_bignum = generer_cle_rsa_bignum()
     fin = time.perf_counter()
-    print(f"Génération terminée en {fin - debut:.6f} sec")
+    print(f"Génération terminée en {(fin - debut) * 1000:.3f} ms")
 
     print("\n=== Factorisation CPU ===")
     debut_cpu = time.perf_counter()
     facteur_cpu = factorisation_bruteforce_cpu_bignum(n_bignum)
     fin_cpu = time.perf_counter()
-    print(f"Temps CPU : {fin_cpu - debut_cpu:.6f} sec")
+    cpu_time_ms = (fin_cpu - debut_cpu) * 1000
+    print(f"Temps CPU : {cpu_time_ms:.3f} ms")
     print(f"Facteur trouvé par CPU : p = {facteur_cpu}")
 
     print("\n=== Factorisation GPU optimisée ===")
     debut_gpu = time.perf_counter()
     facteurs = factoriser_bignum_gpu(n_bignum)
     fin_gpu = time.perf_counter()
-    print(f"Temps GPU : {fin_gpu - debut_gpu:.6f} sec")
+    gpu_time_ms = (fin_gpu - debut_gpu) * 1000
+    print(f"Temps GPU : {gpu_time_ms:.3f} ms")
     print("Facteurs GPU trouvés :")
     print(facteurs)
 
@@ -114,6 +113,7 @@ if __name__ == "__main__":
         print("\n Pas de correspondance GPU/CPU")
 
     # Calcul de l'accélération
-    speedup = (fin_cpu - debut_cpu) / (fin_gpu - debut_gpu)
+    speedup = cpu_time_ms / gpu_time_ms
     print(f"\n Accélération GPU vs CPU : {speedup:.2f}x")
+
 
