@@ -12,9 +12,6 @@ def eratosthenes_crible(prime, n):
         prime[idx] = False
         return
 
-    prime[idx] = True
-    cuda.syncthreads()
-
     if idx >= 2:
         for i in range(2, int(math.sqrt(n)) + 1):
             if idx != i and idx % i == 0:
