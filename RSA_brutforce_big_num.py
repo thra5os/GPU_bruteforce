@@ -1,119 +1,95 @@
 import numpy as np
-from numba import cuda, int64
+from numba import cuda, uint64
 import time
 
-TAILLE_BIGNUM = 64  # 2048 bits (64 * 32 bits)
+# ---------- CONFIGURATION ----------
+TAILLE_BIGNUM = 2048          # 8192 bits
+MAX_CANDIDATE = 2**24        # ~16 millions de candidats
 
-# Multiplication BIGNUM sur CPU
+# ---------- UTILITAIRES CPU ----------
 def multiplication_bignum_cpu(a, b):
     resultat = np.zeros(TAILLE_BIGNUM * 2, dtype=np.uint64)
     for i in range(TAILLE_BIGNUM):
         retenue = 0
         for j in range(TAILLE_BIGNUM):
-            if i + j < len(resultat):
-                temp = resultat[i + j] + int(a[i]) * int(b[j]) + retenue
-                resultat[i + j] = temp & 0xFFFFFFFF
-                retenue = temp >> 32
+            temp = resultat[i + j] + int(a[i]) * int(b[j]) + retenue
+            resultat[i + j] = temp & 0xFFFFFFFF
+            retenue = temp >> 32
     return resultat[:TAILLE_BIGNUM]
 
-# Génère des p et q FIXES pour test réaliste
 def generer_cle_rsa_bignum():
-    # Remplace par deux nombres grands et fixés
-    p = np.array([0] * TAILLE_BIGNUM, dtype=np.uint32)
-    q = np.array([0] * TAILLE_BIGNUM, dtype=np.uint32)
-    p[0] = 49993
-    q[0] = 50021
-    n = multiplication_bignum_cpu(p, q)
-    return p, q, n
+    p = np.zeros(TAILLE_BIGNUM, dtype=np.uint32)
+    q = np.zeros(TAILLE_BIGNUM, dtype=np.uint32)
+    p[0], q[0] = 49993, 50021
+    return p, q, multiplication_bignum_cpu(p, q)
 
-# Modulo BIGNUM
-def bignum_mod_uint(bignum, diviseur):
+def bignum_mod_uint(bignum, divisor):
     reste = 0
     for i in reversed(range(TAILLE_BIGNUM)):
-        reste = (reste << 32) + int(bignum[i])
-        reste = reste % diviseur
+        reste = ((reste << 32) + int(bignum[i])) % divisor
     return reste
 
-# CPU Bruteforce
 def factorisation_bruteforce_cpu_bignum(n_bignum):
     for p in range(3, 2**16, 2):
         if bignum_mod_uint(n_bignum, p) == 0:
             return p
     return None
 
-# GPU Kernel optimisé
+# ---------- KERNEL GPU ----------
 @cuda.jit
-def kernel_factorisation_bignum_gpu(n, facteurs, compteur):
-    shared_n = cuda.shared.array(shape=TAILLE_BIGNUM, dtype=int64)
+def kernel_factorisation_opt(n, facteurs, compteur):
     idx = cuda.grid(1)
-    thread_id = cuda.threadIdx.x
-    if thread_id < TAILLE_BIGNUM:
-        shared_n[thread_id] = n[thread_id]
-    cuda.syncthreads()
+    candidat = idx * 2 + 3
+    if candidat >= MAX_CANDIDATE:
+        return
 
-    if idx < 2**16:
-        candidat = idx * 2 + 3
-        reste = 0
-        for i in range(TAILLE_BIGNUM - 1, -1, -1):
-            reste = (reste << 32) + shared_n[i]
-            reste = reste % candidat
-        if reste == 0:
-            index = cuda.atomic.add(compteur, 0, 1)
-            facteurs[index, 0] = candidat
+    reste = uint64(0)
+    for i in range(TAILLE_BIGNUM - 1, -1, -1):
+        reste = ((reste << 32) + uint64(n[i])) % uint64(candidat)
 
-# GPU Launcher
+    if reste == 0:
+        pos = cuda.atomic.add(compteur, 0, 1)
+        facteurs[pos, 0] = candidat
+
+# ---------- LANCEUR GPU ----------
 def factoriser_bignum_gpu(n_bignum):
     max_facteurs = 10
-    facteurs = cuda.pinned_array((max_facteurs, 2), dtype=np.int64)
+    facteurs = cuda.pinned_array((max_facteurs, 1), dtype=np.int64)
     compteur = cuda.pinned_array(1, dtype=np.int32)
-    facteurs[:] = 0
-    compteur[:] = 0
+    facteurs.fill(0)
+    compteur.fill(0)
 
     d_n = cuda.to_device(n_bignum)
     d_facteurs = cuda.to_device(facteurs)
     d_compteur = cuda.to_device(compteur)
 
-    threads_par_bloc = 256
-    blocs_par_grille = ((2**16) + threads_par_bloc - 1) // threads_par_bloc
-    kernel_factorisation_bignum_gpu[blocs_par_grille, threads_par_bloc](d_n, d_facteurs, d_compteur)
+    threads = 256
+    blocks = (MAX_CANDIDATE + threads - 1) // threads
+    kernel_factorisation_opt[blocks, threads](d_n, d_facteurs, d_compteur)
     cuda.synchronize()
 
     d_facteurs.copy_to_host(facteurs)
     return facteurs
 
+# ---------- MAIN ----------
 if __name__ == "__main__":
     print("=== Génération des clés RSA BIGNUM ===")
-    debut = time.perf_counter()
+    start = time.perf_counter()
     p, q, n_bignum = generer_cle_rsa_bignum()
-    fin = time.perf_counter()
-    print(f"Génération terminée en {(fin - debut) * 1000:.3f} ms")
+    print(f"Terminé en {(time.perf_counter() - start)*1000:.2f} ms\n")
 
-    print("\n=== Factorisation CPU ===")
-    debut_cpu = time.perf_counter()
+    print("=== Factorisation CPU ===")
+    start = time.perf_counter()
     facteur_cpu = factorisation_bruteforce_cpu_bignum(n_bignum)
-    fin_cpu = time.perf_counter()
-    cpu_time_ms = (fin_cpu - debut_cpu) * 1000
-    print(f"Temps CPU : {cpu_time_ms:.3f} ms")
-    print(f"Facteur trouvé par CPU : p = {facteur_cpu}")
+    cpu_time = (time.perf_counter() - start)*1000
+    print(f"Temps CPU : {cpu_time:.2f} ms → p = {facteur_cpu}\n")
 
-    print("\n=== Factorisation GPU optimisée ===")
-    debut_gpu = time.perf_counter()
-    facteurs = factoriser_bignum_gpu(n_bignum)
-    fin_gpu = time.perf_counter()
-    gpu_time_ms = (fin_gpu - debut_gpu) * 1000
-    print(f"Temps GPU : {gpu_time_ms:.3f} ms")
-    print("Facteurs GPU trouvés :")
-    print(facteurs)
+    print("=== Factorisation GPU optimisée ===")
+    start = time.perf_counter()
+    facteurs_gpu = factoriser_bignum_gpu(n_bignum)
+    gpu_time = (time.perf_counter() - start)*1000
+    print(f"Temps GPU : {gpu_time:.2f} ms")
+    print("Facteurs GPU trouvés :", facteurs_gpu[facteurs_gpu[:,0] != 0])
 
-    # Vérification si le GPU trouve le même facteur
-    correspondance = any(facteur_cpu == f[0] for f in facteurs if f[0] != 0)
-    if correspondance:
-        print(f"\n CORRESPONDANCE GPU/CPU : facteur = {facteur_cpu}")
-    else:
-        print("\n Pas de correspondance GPU/CPU")
-
-    # Calcul de l'accélération
-    speedup = cpu_time_ms / gpu_time_ms
-    print(f"\n Accélération GPU vs CPU : {speedup:.2f}x")
-
-
+    speedup = cpu_time / gpu_time
+    print(f"\nAccélération GPU vs CPU : {speedup:.2f}×")
